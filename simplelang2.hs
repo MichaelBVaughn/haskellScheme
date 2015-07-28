@@ -138,6 +138,7 @@ schemeSplit str  = split [' '] ['(',')'] str
 split :: [Char] -> [Char] -> String -> [String]
 split discard singles str = reverse $ map reverse $ splitr discard singles str
 
+--Yeah. It's ugly. I'll fix it.
 splitr :: [Char] -> [Char] -> String -> [String]
 splitr discard singles = foldl takeOne []
                          where takeOne acc s
@@ -155,4 +156,3 @@ splitr discard singles = foldl takeOne []
                                                                            then [s]:(hd:tl)
                                                                            else (s:hd):tl
 
-a
