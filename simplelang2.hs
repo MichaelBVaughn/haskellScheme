@@ -79,12 +79,6 @@ readConst sym = case intRes of (v,_):_ -> NVal v
                 where intRes = tryInt sym
                       boolRes = tryBool sym
 
-
---Depth first tree accumulation
-treeAccumDF :: (NAryTree a -> [b] -> b) -> [b] -> NAryTree a -> b
-treeAccumDF f init l@(Leaf x) = f l init
-treeAccumDF f init n@(Node xs) = f n $ map (treeAccumDF f init) xs
-
 --For use with lambda expressions.
 updateState :: State -> Symbol -> SList AtomicValue -> State
 updateState mapping newSym newVal inputSym 
@@ -100,14 +94,45 @@ s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr
                                                        _ -> error unexpectedError
                                     where subEvalRes = consFoldl consOneRes Nil lst
                                           consOneRes exp acc = Cons (basicEval mapping exp) acc
-                                          applicabilityError = "s-expression starts with non-applicable value"
+                                          applicabilityError = "s-expression starts with non-applicable value: " ++ (show lst)
                                           unexpectedError = "Nonsensical result from folding basicEval"
+
+validateBindingExpr :: SList AtomicValue -> Bool
+validateBindingExpr bind@(Cons (Atom (SymVal _)) expr) 
+                    |not $ isProperList bind = error $ "Define binding is not proper list: " ++ (show expr)
+                    |not $ 2 == slistLen bind = error $ "Define binding is not proper length: " ++ (show expr)
+                    |otherwise = True
+validateBindingExpr _ = error "invalid bind expression"
+
+appendBinding :: SList AtomicValue -> State -> State
+appendBinding exp mapping = updateState mapping sym val
+                          where sym = extractSymbol $ car exp
+                                val = basicEval mapping $ car $ cdr exp
+
+extractSymbol :: SList AtomicValue -> Symbol
+extractSymbol (Atom (SymVal s)) = s
+extractSymbol _ = error "Invalid symbol in let binding"
+
+letEval :: State -> SList AtomicValue -> SList AtomicValue
+letEval mapping expr
+        |not $ isProperList expr = error "Define expression is not proper list"
+        |not $ 3 == slistLen expr = error "Define expression is not proper length"
+        |otherwise = if consFoldl foldValidation True bindings
+                     then basicEval newState body
+                     else error "Invalid let bindings"
+        where foldValidation a b = b && (validateBindingExpr a)
+              bindings = car $ cdr expr
+              newState = consFoldl appendBinding mapping bindings
+              body = car $ cdr $ cdr expr
+        
 
 --Top-level evaluation function.
 basicEval :: State -> SList AtomicValue -> SList AtomicValue
 basicEval mapping Nil = Nil
 basicEval mapping (Atom (SymVal sym)) = mapping sym
+basicEval mapping sexpr@(Cons (Atom (SymVal "let")) _) = letEval mapping sexpr
 basicEval mapping sexpr@(Cons _ _) = s_exprEval mapping sexpr
+
 
 
 --Reader code: Not final. I'll probably find an actual text library for haskell. 
