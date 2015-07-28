@@ -47,7 +47,7 @@ slistLen (Cons car cdr) = 1 + slistLen cdr
 --Default state. Contains interpreter builtins, and fails over to parsing self evaluating values.
 defaultState :: State
 defaultState "+" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (+)) (Atom $ NVal 0))
-defaultState "-" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (-)) (Atom $ NVal 0)) 
+defaultState "-" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (-)) (Atom $ NVal 0)) --Fix this 
 defaultState "*" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (*)) (Atom $ NVal 1))
 defaultState "/" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (div)) (Atom $ NVal 1))
 defaultState sym = Atom $ readConst sym
