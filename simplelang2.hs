@@ -4,8 +4,9 @@ type Symbol = String
 --data SExpr = NAryTree Symbol 
 --data ParseTree = NAryTree AtomicValue 
 
---FVal is the type for primitive functions.
-data AtomicValue = NVal Int | BVal Bool | SVal String | SymVal Symbol | FVal Func deriving (Show)
+--FVal is the type for primitive functions. ClosureState represents results of lambda.
+data AtomicValue = NVal Int | BVal Bool | SVal String | SymVal Symbol | FVal Func | Closure ClosureState  deriving (Show)
+data ClosureState = ClsSt [Symbol] (SList AtomicValue) deriving (Show)
 
 type Func = SList AtomicValue -> SList AtomicValue
  
@@ -90,12 +91,22 @@ s_exprEval :: State -> SList AtomicValue -> SList AtomicValue
 s_exprEval mapping Nil = error "s_exprEval cannot be applied to Nil"
 s_exprEval mapping (Atom _) = error "s_exprEval cannot be applied to Atom"
 s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr) -> f cdr
+                                                       (Cons (Atom (Closure cs)) cdr) -> applyClosure mapping cs cdr
                                                        (Cons (Atom _) cdr) -> error applicabilityError
                                                        _ -> error unexpectedError
                                     where subEvalRes = consFoldl consOneRes Nil lst
                                           consOneRes exp acc = Cons (basicEval mapping exp) acc
                                           applicabilityError = "s-expression starts with non-applicable value: " ++ (show lst)
                                           unexpectedError = "Nonsensical result from folding basicEval"
+
+applyClosure :: State -> ClosureState -> SList AtomicValue -> SList AtomicValue
+applyClosure mapping c@(ClsSt syms fxn) args 
+                     |not $ matchArgList syms args = error $ "Arg list for function does not match: " ++ (show c)
+                     |otherwise = basicEval newState fxn
+                     where matchArgList s a = (length s) == (slistLen a)
+                           argLst = consFoldl (:) [] args
+                           newState = foldl updateWithPair mapping $ zip syms argLst
+                           updateWithPair old (sym, v) = updateState mapping sym v
 
 validateBindingExpr :: SList AtomicValue -> Bool
 validateBindingExpr bind@(Cons (Atom (SymVal _)) expr) 
@@ -124,16 +135,37 @@ letEval mapping expr
               bindings = car $ cdr expr
               newState = consFoldl appendBinding mapping bindings
               body = car $ cdr $ cdr expr
-        
+
+lambdaEval :: State -> SList AtomicValue -> SList AtomicValue
+lambdaEval mapping expr
+           |not $ validLambdaSyntax expr = error $ "Invalid lambda syntax" ++ (show expr)
+           |not $ validateArgs args = error $ "Invalid argument list for lambda expr" ++ (show expr)
+           |otherwise = Atom $ Closure $ ClsSt argList fxn
+           where args = car $ cdr expr
+                 argList = consFoldl extractAndAppend [] args
+                 extractAndAppend exp l = (extractSymbol exp):l
+                 fxn = car $ cdr $ cdr  expr
+
+validateArgs :: SList AtomicValue -> Bool
+validateArgs args = proper && symbols
+             where proper = isProperList args
+                   symbols = consFoldl (\a b -> b && isSymbol a) True args 
+                   isSymbol (Atom (SymVal _)) = True
+                   isSymbol _ = False
+
+validLambdaSyntax :: SList AtomicValue -> Bool
+validLambdaSyntax expr@(Cons (Atom (SymVal "lambda")) lcdr)
+                 |not $ isProperList expr = error $ "Define binding is not proper list" ++ (show expr)
+                 |not $ 3 == slistLen expr = error $ "Define binding is not proper length" ++ (show expr)
+                 |otherwise = True
 
 --Top-level evaluation function.
 basicEval :: State -> SList AtomicValue -> SList AtomicValue
 basicEval mapping Nil = Nil
 basicEval mapping (Atom (SymVal sym)) = mapping sym
 basicEval mapping sexpr@(Cons (Atom (SymVal "let")) _) = letEval mapping sexpr
+basicEval mapping sexpr@(Cons (Atom (SymVal "lambda")) _) = lambdaEval mapping sexpr
 basicEval mapping sexpr@(Cons _ _) = s_exprEval mapping sexpr
-
-
 
 --Reader code: Not final. I'll probably find an actual text library for haskell. 
 --This exists for convenience of debugging.
