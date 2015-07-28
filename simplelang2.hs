@@ -6,7 +6,7 @@ type Symbol = String
 
 --FVal is the type for primitive functions. ClosureState represents results of lambda.
 data AtomicValue = NVal Int | BVal Bool | SVal String | SymVal Symbol | FVal Func | Closure ClosureState  deriving (Show)
-data ClosureState = ClsSt [Symbol] (SList AtomicValue) deriving (Show)
+data ClosureState = ClsSt [Symbol] (SList AtomicValue) State deriving (Show)
 
 type Func = SList AtomicValue -> SList AtomicValue
  
@@ -100,12 +100,12 @@ s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr
                                           unexpectedError = "Nonsensical result from folding basicEval"
 
 applyClosure :: State -> ClosureState -> SList AtomicValue -> SList AtomicValue
-applyClosure mapping c@(ClsSt syms fxn) args 
+applyClosure mapping c@(ClsSt syms fxn st) args 
                      |not $ matchArgList syms args = error $ "Arg list for function does not match: " ++ (show c)
                      |otherwise = basicEval newState fxn
                      where matchArgList s a = (length s) == (slistLen a)
                            argLst = consFoldl (:) [] args
-                           newState = foldl updateWithPair mapping $ zip syms argLst
+                           newState = foldl updateWithPair st $ zip syms argLst
                            updateWithPair old (sym, v) = updateState mapping sym v
 
 validateBindingExpr :: SList AtomicValue -> Bool
@@ -127,7 +127,7 @@ extractSymbol _ = error "Invalid symbol in let binding"
 letEval :: State -> SList AtomicValue -> SList AtomicValue
 letEval mapping expr
         |not $ isProperList expr = error "Define expression is not proper list"
-        |not $ 3 == slistLen expr = error "Define expression is not proper length"
+        |not $ 3 == slistLen expr = error $ "Define expression is not proper length" ++ (show expr)
         |otherwise = if consFoldl foldValidation True bindings
                      then basicEval newState body
                      else error "Invalid let bindings"
@@ -140,7 +140,7 @@ lambdaEval :: State -> SList AtomicValue -> SList AtomicValue
 lambdaEval mapping expr
            |not $ validLambdaSyntax expr = error $ "Invalid lambda syntax" ++ (show expr)
            |not $ validateArgs args = error $ "Invalid argument list for lambda expr" ++ (show expr)
-           |otherwise = Atom $ Closure $ ClsSt argList fxn
+           |otherwise = Atom $ Closure $ ClsSt argList fxn mapping
            where args = car $ cdr expr
                  argList = consFoldl extractAndAppend [] args
                  extractAndAppend exp l = (extractSymbol exp):l
@@ -212,4 +212,3 @@ splitr discard singles = foldl takeOne []
                                                                            else if elem (head hd) singles 
                                                                            then [s]:(hd:tl)
                                                                            else (s:hd):tl
-
