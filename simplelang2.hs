@@ -50,7 +50,6 @@ defaultState "*" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (*)) (Atom $ NV
 defaultState "/" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (div)) (Atom $ NVal 1))
 defaultState sym = Atom $ readConst sym
 
-
 --Create a variadic function from a binary function over slists
 mkVariadicFxn :: (SList AtomicValue -> SList AtomicValue -> SList AtomicValue) -> SList AtomicValue -> Func
 mkVariadicFxn f init args
@@ -107,10 +106,53 @@ s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr
                                                        _ -> error unexpectedError
                                     where subEvalRes = consFoldl consOneRes Nil lst
                                           consOneRes exp acc = Cons (basicEval mapping exp) acc
-                                          applicabilityError = "Sexpression starts with non-applicable value"
+                                          applicabilityError = "s-expression starts with non-applicable value"
                                           unexpectedError = "Nonsensical result from folding basicEval"
 
 basicEval :: State -> SList AtomicValue -> SList AtomicValue
 basicEval mapping Nil = Nil
 basicEval mapping (Atom (SymVal sym)) = mapping sym
 basicEval mapping sexpr@(Cons _ _) = s_exprEval mapping sexpr
+
+
+--Reader code
+evaluateText :: String -> SList AtomicValue
+evaluateText str = basicEval defaultState $ schemeRead str
+
+schemeRead :: String -> SList AtomicValue
+schemeRead txt = case listread $ schemeSplit txt of (Cons prog Nil, []) -> prog
+                                                    _ -> error "Bad program text"
+
+listread :: [String] -> (SList AtomicValue, [String])
+listread [] = (Nil, [])
+listread (")":tl) = (Nil, tl)
+listread ("(":tl) = (Cons car cdr, finalRight)
+                  where (car, newRight) = listread tl
+                        (cdr, finalRight) = listread newRight
+listread (str:tl) = (Cons (Atom $ SymVal str) cdr, newRight)
+                  where (cdr, newRight) = listread tl
+
+schemeSplit :: String -> [String]
+schemeSplit str  = split [' '] ['(',')'] str
+
+split :: [Char] -> [Char] -> String -> [String]
+split discard singles str = reverse $ map reverse $ splitr discard singles str
+
+splitr :: [Char] -> [Char] -> String -> [String]
+splitr discard singles = foldl takeOne []
+                         where takeOne acc s
+                                       |elem s discard = case acc of [] -> [[]]
+                                                                     l@([]:tl) -> l
+                                                                     l -> []:l
+                                       |elem s singles = case acc of [] -> [s]:acc
+                                                                     (hd:tl) -> if hd == []
+                                                                                then (s:hd):tl
+                                                                                else [s]:acc
+                                       |otherwise = case acc of [] -> [[s]]
+                                                                (hd:tl) -> if hd == [] 
+                                                                           then (s:hd):tl
+                                                                           else if elem (head hd) singles 
+                                                                           then [s]:(hd:tl)
+                                                                           else (s:hd):tl
+
+a
