@@ -63,7 +63,7 @@ mkVariadicFxn f init args
 mkBinArithmeticOp :: (Int -> Int -> Int) -> SList AtomicValue -> SList AtomicValue -> SList AtomicValue
 mkBinArithmeticOp f (Atom (NVal l)) (Atom (NVal r)) = (Atom . NVal $ f l r)
 mkBinArithmeticOp f (Atom (NVal _)) _ = error "Arithmetic operation expected Int and Int. Received Int [other]"
-mkBinArithmeticOp f _ (Atom (NVal _)) = error "Arithmetic operation expected Int and Int. Received [Other] Int"
+mkBinArithmeticOp f l (Atom (NVal _)) = error $ "Arithmetic operation expected Int and Int. Received [Other] Int" ++ (show l)
 mkBinArithmeticOp f _ _ = error "Arithmetic operation expected Int and Int. Received [Other] [Other]"
 
 tryInt :: String -> [(Int,String)]
@@ -101,12 +101,12 @@ s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr
 
 applyClosure :: State -> ClosureState -> SList AtomicValue -> SList AtomicValue
 applyClosure mapping c@(ClsSt syms fxn st) args 
-                     |not $ matchArgList syms args = error $ "Arg list for function does not match: " ++ (show c)
+                     |not $ matchArgList syms args = error $ "Arg list for function does not match: " ++ (show args)
                      |otherwise = basicEval newState fxn
                      where matchArgList s a = (length s) == (slistLen a)
                            argLst = consFoldl (:) [] args
                            newState = foldl updateWithPair st $ zip syms argLst
-                           updateWithPair old (sym, v) = updateState mapping sym v
+                           updateWithPair old (sym, v) = updateState old sym v
 
 validateBindingExpr :: SList AtomicValue -> Bool
 validateBindingExpr bind@(Cons (Atom (SymVal _)) expr) 
