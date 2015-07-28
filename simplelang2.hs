@@ -138,6 +138,10 @@ schemeSplit str  = split [' '] ['(',')'] str
 split :: [Char] -> [Char] -> String -> [String]
 split discard singles str = reverse $ map reverse $ splitr discard singles str
 
+--TODO: Code does not check for balanced parenthesis. By sheer accident, 
+--in the absence of closing parens, the interpreter acts as though they exist
+--at the end of the string, so that's fun.
+
 --Yeah. It's ugly. I'll fix it.
 splitr :: [Char] -> [Char] -> String -> [String]
 splitr discard singles = foldl takeOne []
