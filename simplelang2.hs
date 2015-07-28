@@ -1,20 +1,20 @@
 import Text.Show.Functions
 
-data NAryTree a = Node [NAryTree a] | Leaf a deriving (Show)
-
 type Symbol = String 
 --data SExpr = NAryTree Symbol 
 --data ParseTree = NAryTree AtomicValue 
 
---FVal is the type for primitive functions
+--FVal is the type for primitive functions.
 data AtomicValue = NVal Int | BVal Bool | SVal String | SymVal Symbol | FVal Func deriving (Show)
 
 type Func = SList AtomicValue -> SList AtomicValue
  
 type State = Symbol -> SList AtomicValue
 
+--Classic cons cell lists.
 data SList a = Cons (SList a) (SList a) | Atom a | Nil deriving (Show)
 
+--The classic Lisp list functions. Know them. Love them.
 car :: SList a -> SList a
 car Nil = error "Can't take car of Nil"
 car (Atom _) = error "Can't take car of Atom"
@@ -31,7 +31,7 @@ isProperList Nil = True
 isProperList (Atom a) = False
 isProperList (Cons car cdr) = isProperList cdr
 
---Fold over sequence of cons pairs. 
+--A fold over a single-level of a cons-ed list.
 consFoldl :: (SList a -> b -> b) -> b -> SList a -> b
 consFoldl f acc Nil = acc
 consFoldl f acc atom@(Atom _) = f atom acc
@@ -43,6 +43,7 @@ slistLen Nil = 0
 slistLen (Atom a) = error "Improper list."
 slistLen (Cons car cdr) = 1 + slistLen cdr
 
+--Default state. Contains interpreter builtins, and fails over to parsing self evaluating values.
 defaultState :: State
 defaultState "+" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (+)) (Atom $ NVal 0))
 defaultState "-" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (-)) (Atom $ NVal 0)) 
@@ -84,14 +85,7 @@ treeAccumDF :: (NAryTree a -> [b] -> b) -> [b] -> NAryTree a -> b
 treeAccumDF f init l@(Leaf x) = f l init
 treeAccumDF f init n@(Node xs) = f n $ map (treeAccumDF f init) xs
 
---Convert n-ary tree to scheme-style data structure
-mapToScheme :: (NAryTree Symbol) -> [SList AtomicValue] -> SList AtomicValue
-mapToScheme (Leaf s) _ = Atom $ SymVal s
-mapToScheme (Node _) vals = foldr Cons Nil vals
-
-makeConsList :: NAryTree Symbol -> SList AtomicValue
-makeConsList = treeAccumDF mapToScheme [Nil]
-
+--For use with lambda expressions.
 updateState :: State -> Symbol -> SList AtomicValue -> State
 updateState mapping newSym newVal inputSym 
             | inputSym == newSym = newVal
@@ -109,13 +103,15 @@ s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr
                                           applicabilityError = "s-expression starts with non-applicable value"
                                           unexpectedError = "Nonsensical result from folding basicEval"
 
+--Top-level evaluation function.
 basicEval :: State -> SList AtomicValue -> SList AtomicValue
 basicEval mapping Nil = Nil
 basicEval mapping (Atom (SymVal sym)) = mapping sym
 basicEval mapping sexpr@(Cons _ _) = s_exprEval mapping sexpr
 
 
---Reader code
+--Reader code: Not final. I'll probably find an actual text library for haskell. 
+--This exists for convenience of debugging.
 evaluateText :: String -> SList AtomicValue
 evaluateText str = basicEval defaultState $ schemeRead str
 
