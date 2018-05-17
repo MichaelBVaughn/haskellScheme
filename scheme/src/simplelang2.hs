@@ -1,12 +1,20 @@
-import Text.Show.Functions
+module Scheme where
 
-type Symbol = String 
---data SExpr = NAryTree Symbol 
---data ParseTree = NAryTree AtomicValue 
+import Text.Show.Functions
+import Text.ParserCombinators.Parsec
+import Text.ParserCombinators.Parsec.Expr
+import Text.ParserCombinators.Parsec.Language
+import qualified Text.ParserCombinators.Parsec.Token as Token
+
+
+type Symbol = String
+
+
 
 --FVal is the type for primitive functions. ClosureState represents results of lambda.
-data AtomicValue = NVal Int | BVal Bool | SVal String | SymVal Symbol | FVal Func | Closure ClosureState  deriving (Show)
-data ClosureState = ClsSt [Symbol] (SList AtomicValue) State deriving (Show)
+data AtomicValue = NVal Int | BVal Bool | SVal String | SymVal Symbol | FVal Func | Closure ClosureState | BOT  deriving (Show)
+
+data ClosureState = ClsSt [Symbol] (SList AtomicValue) Scheme.State deriving (Show)
 
 type Func = SList AtomicValue -> SList AtomicValue
  
@@ -14,6 +22,30 @@ type State = Symbol -> SList AtomicValue
 
 --Classic cons cell lists.
 data SList a = Cons (SList a) (SList a) | Atom a | Nil deriving (Show)
+
+lambdaSymb = SymVal "lambda"
+
+-- Parser definition
+languageDef =
+  emptyDef { Token.identStart = alphaNum <|> char '-' <|> char '+' <|> char '/' <|> char '*' ,
+             Token.identLetter = alphaNum <|> char '-' <|> char '+' <|> char '/' <|> char '*' 
+             }
+
+lexer = Token.makeTokenParser languageDef
+
+identifier = Token.identifier lexer
+parens = Token.parens lexer
+
+symbol :: Parser (SList AtomicValue)
+symbol =
+  do tok <- identifier
+     return $ Atom $ SymVal tok
+
+list :: Parser (SList AtomicValue)
+list =
+  do list <- parens $ sepBy (symbol <|> list) (many $ char ' ')
+     return $ foldr (Cons) Nil list
+-- End parser definition
 
 --The classic Lisp list functions. Know them. Love them.
 car :: SList a -> SList a
@@ -45,12 +77,12 @@ slistLen (Atom a) = error "Improper list."
 slistLen (Cons car cdr) = 1 + slistLen cdr
 
 --Default state. Contains interpreter builtins, and fails over to parsing self evaluating values.
-defaultState :: State
+defaultState :: Scheme.State
 defaultState "+" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (+)) (Atom $ NVal 0))
 defaultState "-" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (-)) (Atom $ NVal 0)) --Fix this 
 defaultState "*" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (*)) (Atom $ NVal 1))
 defaultState "/" = Atom $ FVal (mkVariadicFxn (mkBinArithmeticOp (div)) (Atom $ NVal 1))
-defaultState sym = Atom $ readConst sym
+defaultState sym = Atom $ 
 
 --Create a variadic function from a binary function over slists
 mkVariadicFxn :: (SList AtomicValue -> SList AtomicValue -> SList AtomicValue) -> SList AtomicValue -> Func
@@ -81,13 +113,13 @@ readConst sym = case intRes of (v,_):_ -> NVal v
                       boolRes = tryBool sym
 
 --For use with lambda expressions.
-updateState :: State -> Symbol -> SList AtomicValue -> State
+updateState :: Scheme.State -> Symbol -> SList AtomicValue -> Scheme.State
 updateState mapping newSym newVal inputSym 
             | inputSym == newSym = newVal
             | otherwise = mapping inputSym
 
 --Evaluate basic s-expressions with variadic operators.
-s_exprEval :: State -> SList AtomicValue -> SList AtomicValue
+s_exprEval :: Scheme.State -> SList AtomicValue -> SList AtomicValue
 s_exprEval mapping Nil = error "s_exprEval cannot be applied to Nil"
 s_exprEval mapping (Atom _) = error "s_exprEval cannot be applied to Atom"
 s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr) -> f cdr
@@ -99,14 +131,14 @@ s_exprEval mapping lst@(Cons _ _) = case subEvalRes of (Cons (Atom (FVal f)) cdr
                                           applicabilityError = "s-expression starts with non-applicable value: " ++ (show lst)
                                           unexpectedError = "Nonsensical result from folding basicEval"
 
-applyClosure :: State -> ClosureState -> SList AtomicValue -> SList AtomicValue
+applyClosure :: Scheme.State -> ClosureState -> SList AtomicValue -> SList AtomicValue
 applyClosure mapping c@(ClsSt syms fxn st) args 
                      |not $ matchArgList syms args = error $ "Arg list for function does not match: " ++ (show args)
                      |otherwise = basicEval newState fxn
                      where matchArgList s a = (length s) == (slistLen a)
                            argLst = consFoldl (:) [] args
                            newState = foldl updateWithPair st $ zip syms argLst
-                           updateWithPair old (sym, v) = updateState old sym v
+                           updateWithPair old (sym, v) = Scheme.updateState old sym v
 
 validateBindingExpr :: SList AtomicValue -> Bool
 validateBindingExpr bind@(Cons (Atom (SymVal _)) expr) 
@@ -115,8 +147,8 @@ validateBindingExpr bind@(Cons (Atom (SymVal _)) expr)
                     |otherwise = True
 validateBindingExpr _ = error "invalid bind expression"
 
-appendBinding :: SList AtomicValue -> State -> State
-appendBinding exp mapping = updateState mapping sym val
+appendBinding :: SList AtomicValue -> Scheme.State -> Scheme.State
+appendBinding exp mapping = Scheme.updateState mapping sym val
                           where sym = extractSymbol $ car exp
                                 val = basicEval mapping $ car $ cdr exp
 
@@ -124,7 +156,7 @@ extractSymbol :: SList AtomicValue -> Symbol
 extractSymbol (Atom (SymVal s)) = s
 extractSymbol _ = error "Invalid symbol in let binding"
 
-letEval :: State -> SList AtomicValue -> SList AtomicValue
+letEval :: Scheme.State -> SList AtomicValue -> SList AtomicValue
 letEval mapping expr
         |not $ isProperList expr = error "Define expression is not proper list"
         |not $ 3 == slistLen expr = error $ "Define expression is not proper length" ++ (show expr)
@@ -136,7 +168,7 @@ letEval mapping expr
               newState = consFoldl appendBinding mapping bindings
               body = car $ cdr $ cdr expr
 
-lambdaEval :: State -> SList AtomicValue -> SList AtomicValue
+lambdaEval :: Scheme.State -> SList AtomicValue -> SList AtomicValue
 lambdaEval mapping expr
            |not $ validLambdaSyntax expr = error $ "Invalid lambda syntax" ++ (show expr)
            |not $ validateArgs args = error $ "Invalid argument list for lambda expr" ++ (show expr)
@@ -160,55 +192,63 @@ validLambdaSyntax expr@(Cons (Atom (SymVal "lambda")) lcdr)
                  |otherwise = True
 
 --Top-level evaluation function.
-basicEval :: State -> SList AtomicValue -> SList AtomicValue
+basicEval :: Scheme.State -> SList AtomicValue -> SList AtomicValue
 basicEval mapping Nil = Nil
 basicEval mapping (Atom (SymVal sym)) = mapping sym
 basicEval mapping sexpr@(Cons (Atom (SymVal "let")) _) = letEval mapping sexpr
 basicEval mapping sexpr@(Cons (Atom (SymVal "lambda")) _) = lambdaEval mapping sexpr
 basicEval mapping sexpr@(Cons _ _) = s_exprEval mapping sexpr
 
+
+schemeEval :: String -> Either ParseError (SList AtomicValue) 
+schemeEval inStr =
+  do list <- parse list "" inStr
+     return $ basicEval defaultState $ list
+
 --Reader code: Not final. I'll probably find an actual text library for haskell. 
 --This exists for convenience of debugging.
-evaluateText :: String -> SList AtomicValue
-evaluateText str = basicEval defaultState $ schemeRead str
+-- evaluateText :: String -> SList AtomicValue
+-- evaluateText str = basicEval defaultState $ schemeRead str
 
-schemeRead :: String -> SList AtomicValue
-schemeRead txt = case listread $ schemeSplit txt of (Cons prog Nil, []) -> prog
-                                                    _ -> error "Bad program text"
 
-listread :: [String] -> (SList AtomicValue, [String])
-listread [] = (Nil, [])
-listread (")":tl) = (Nil, tl)
-listread ("(":tl) = (Cons car cdr, finalRight)
-                  where (car, newRight) = listread tl
-                        (cdr, finalRight) = listread newRight
-listread (str:tl) = (Cons (Atom $ SymVal str) cdr, newRight)
-                  where (cdr, newRight) = listread tl
 
-schemeSplit :: String -> [String]
-schemeSplit str  = split [' '] ['(',')'] str
+-- schemeRead :: String -> SList AtomicValue
+-- schemeRead txt = case listread $ schemeSplit txt of (Cons prog Nil, []) -> prog
+--                                                     _ -> error "Bad program text"
 
-split :: [Char] -> [Char] -> String -> [String]
-split discard singles str = reverse $ map reverse $ splitr discard singles str
+-- listread :: [String] -> (SList AtomicValue, [String])
+-- listread [] = (Nil, [])
+-- listread (")":tl) = (Nil, tl)
+-- listread ("(":tl) = (Cons car cdr, finalRight)
+--                   where (car, newRight) = listread tl
+--                         (cdr, finalRight) = listread newRight
+-- listread (str:tl) = (Cons (Atom $ SymVal str) cdr, newRight)
+--                   where (cdr, newRight) = listread tl
 
---TODO: Code does not check for balanced parenthesis. By sheer accident, 
---in the absence of closing parens, the interpreter acts as though they exist
---at the end of the string, so that's fun.
+-- schemeSplit :: String -> [String]
+-- schemeSplit str  = split [' '] ['(',')'] str
 
---Yeah. It's ugly. I'll fix it.
-splitr :: [Char] -> [Char] -> String -> [String]
-splitr discard singles = foldl takeOne []
-                         where takeOne acc s
-                                       |elem s discard = case acc of [] -> [[]]
-                                                                     l@([]:tl) -> l
-                                                                     l -> []:l
-                                       |elem s singles = case acc of [] -> [s]:acc
-                                                                     (hd:tl) -> if hd == []
-                                                                                then (s:hd):tl
-                                                                                else [s]:acc
-                                       |otherwise = case acc of [] -> [[s]]
-                                                                (hd:tl) -> if hd == [] 
-                                                                           then (s:hd):tl
-                                                                           else if elem (head hd) singles 
-                                                                           then [s]:(hd:tl)
-                                                                           else (s:hd):tl
+-- split :: [Char] -> [Char] -> String -> [String]
+-- split discard singles str = reverse $ map reverse $ splitr discard singles str
+
+-- --TODO: Code does not check for balanced parenthesis. By sheer accident, 
+-- --in the absence of closing parens, the interpreter acts as though they exist
+-- --at the end of the string, so that's fun.
+
+-- --Yeah. It's ugly. I'll fix it.
+-- splitr :: [Char] -> [Char] -> String -> [String]
+-- splitr discard singles = foldl takeOne []
+--                          where takeOne acc s
+--                                        |elem s discard = case acc of [] -> [[]]
+--                                                                      l@([]:tl) -> l
+--                                                                      l -> []:l
+--                                        |elem s singles = case acc of [] -> [s]:acc
+--                                                                      (hd:tl) -> if hd == []
+--                                                                                 then (s:hd):tl
+--                                                                                 else [s]:acc
+--                                        |otherwise = case acc of [] -> [[s]]
+--                                                                 (hd:tl) -> if hd == [] 
+--                                                                            then (s:hd):tl
+--                                                                            else if elem (head hd) singles 
+--                                                                            then [s]:(hd:tl)
+--                                                                            else (s:hd):tl
