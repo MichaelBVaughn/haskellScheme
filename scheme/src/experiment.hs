@@ -38,10 +38,12 @@ lexer = Token.makeTokenParser languageDef
 identifier = Token.identifier lexer
 parens = Token.parens lexer
 
+--Weirdly I couldn't find a decent int parser already included in the API docs
+--for Parsec. 
 sInt :: Parser (SExpr)
 sInt =
   do digits <- many1 digit
-     let n = foldl (\x d -> 10 * x + digitToInt d) 0 digits
+     let n = foldl (\x d -> 10 * x + digitToInt d) 0 digits 
      return (Atom (NVal n))
 
 symbol :: Parser (SExpr)
@@ -137,8 +139,8 @@ lambdaEval sigma expr =
                  do
                    sym <- extractSymbol exp
                    return (sym:l) in
-           (consFoldM extractAndAppend [] args) >>=
-           (\arglist -> Right (sigma, Atom $ Closure $ ClsSt arglist body sigma)))
+           do arglist <- consFoldM extractAndAppend [] args
+              Right (sigma, Atom $ Closure $ ClsSt arglist body sigma))
       _ -> Left "Error: Malformed lambda expression"    
            
 isApplicable :: Experiment.State  -> SExpr -> Bool
