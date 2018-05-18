@@ -66,10 +66,11 @@ isProperList Nil = True
 isProperList (Atom a) = False
 isProperList (Cons car cdr) = isProperList cdr
 
+--
 --Only used internally for checking argument lists.
 slistLen :: SList a -> Int
 slistLen Nil = 0
-slistLen (Atom a) = error "Improper list."
+slistLen (Atom a) = 0
 slistLen (Cons car cdr) = 1 + slistLen cdr
 
 --A fold over a single-level of a cons-ed list.
@@ -77,6 +78,11 @@ consFoldl :: (SList a -> b -> b) -> b -> SList a -> b
 consFoldl f acc Nil = acc
 consFoldl f acc atom@(Atom _) = f atom acc
 consFoldl f acc (Cons lcar lcdr) = f lcar $ consFoldl f acc lcdr
+
+consFoldM :: Monad m => (SList a -> b -> m b) -> b -> SList a -> m b
+consFoldM f acc Nil = return acc
+consFoldM f acc atom@(Atom _) = f atom acc
+consFoldM f acc (Cons lcar lcdr) = (f lcar) =<< (consFoldM f acc lcdr)
 
 mkArithBuiltin :: Int -> (Int -> Int -> Int) -> Func
 mkArithBuiltin identity op sigma (Atom (NVal x)) (Atom (NVal y)) =
@@ -112,9 +118,9 @@ validateArgs args = proper && symbols
                    isSymbol _ = False
 
 --TO DO: This is partial. Fix.
-extractSymbol :: SList AtomicValue -> Symbol
-extractSymbol (Atom (SymVal s)) = s
-extractSymbol _ = error "Invalid symbol in let binding"
+extractSymbol :: SList AtomicValue -> Either String Symbol
+extractSymbol (Atom (SymVal s)) = Right s
+extractSymbol _ = Left "Invalid symbol in let binding"
 
 lambdaEval :: Experiment.State -> SExpr -> ErrorContext
 lambdaEval sigma expr =
@@ -127,9 +133,12 @@ lambdaEval sigma expr =
         (if not $ validateArgs args then
            Left $ "Lambda has invalid arg list"
         else 
-           let extractAndAppend exp l = (extractSymbol exp):l in
-           let arglist = consFoldl extractAndAppend [] args in
-           Right (sigma, Atom $ Closure $ ClsSt arglist body sigma))
+           let extractAndAppend exp l =
+                 do
+                   sym <- extractSymbol exp
+                   return (sym:l) in
+           (consFoldM extractAndAppend [] args) >>=
+           (\arglist -> Right (sigma, Atom $ Closure $ ClsSt arglist body sigma)))
       _ -> Left "Error: Malformed lambda expression"    
            
 isApplicable :: Experiment.State  -> SExpr -> Bool
