@@ -223,3 +223,11 @@ readAndEval inStr =
     list <- parse prog "" inStr
     return $ eval defaultState $ list
 
+tryRun :: String -> IO ()
+tryRun prog =
+  case readAndEval prog of
+    Left e -> putStrLn (show e)
+    Right ctx -> case ctx of
+                   Left e -> putStrLn e
+                   Right (_, exp) -> putStrLn (show exp)
+    
